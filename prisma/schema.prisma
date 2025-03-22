@@ -1,0 +1,292 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  name             String
+  hashedPassword   String
+  role             String            @default("user") // user, admin, venue_staff, organizer
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  sessions         Session[]
+  bookings         Booking[]
+  payments         Payment[]
+  organizer        Organizer?
+  approvalActions  ApprovalHistory[]
+  AdminAuditLog    AdminAuditLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Event {
+  id          String       @id @default(cuid())
+  name        String
+  description String       @db.Text
+  startDate   DateTime
+  endDate     DateTime
+  venueId     String
+  artistId    String
+  organizerId String? // New field
+  thumbnail   String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  venue       Venue        @relation(fields: [venueId], references: [id])
+  artist      Artist       @relation(fields: [artistId], references: [id])
+  organizer   Organizer?   @relation(fields: [organizerId], references: [id]) // New relation
+  seatMap     SeatMap?
+  ticketTypes TicketType[]
+  bookings    Booking[]
+}
+
+model Venue {
+  id          String   @id @default(cuid())
+  name        String
+  address     String
+  city        String
+  state       String
+  country     String
+  zipCode     String
+  capacity    Int
+  description String?  @db.Text
+  thumbnail   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  events      Event[]
+}
+
+model Artist {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  genre       String?
+  thumbnail   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  events      Event[]
+}
+
+model SeatMap {
+  id        String   @id @default(cuid())
+  eventId   String   @unique
+  mapData   Json // JSON structure to define layout
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seats     Seat[]
+}
+
+model Seat {
+  id         String     @id @default(cuid())
+  seatMapId  String
+  row        String
+  number     String
+  typeId     String
+  status     String     @default("available") // available, locked, confirmed
+  lockExpiry DateTime?
+  lockUserId String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  seatMap    SeatMap    @relation(fields: [seatMapId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [typeId], references: [id])
+  tickets    Ticket[]
+
+  @@unique([seatMapId, row, number])
+}
+
+model TicketType {
+  id          String   @id @default(cuid())
+  eventId     String
+  name        String
+  description String?
+  price       Decimal
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  seats       Seat[]
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  eventId     String
+  userId      String
+  ticketCount Int
+  totalAmount Float
+  status      String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment     Payment?
+  tickets     Ticket[]
+}
+
+model Payout {
+  id          String   @id @default(cuid())
+  organizerId String
+  amount      Float
+  status      String   @default("PENDING") // PENDING, COMPLETED, CANCELLED
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  organizer   Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id               String           @id @default(cuid())
+  bookingId        String           @unique
+  userId           String
+  paymentGatewayId String // Razorpay payment ID
+  paymentMethod    String // UPI, card, net banking, wallet
+  amount           Decimal
+  currency         String           @default("INR")
+  status           String // initiated, processing, completed, failed
+  transactionId    String? // Reference ID from payment gateway
+  gatewayResponse  Json? // Store the full response from payment gateway
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  booking          Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizePayouts  OrganizePayout[]
+}
+
+model Ticket {
+  id         String    @id @default(cuid())
+  bookingId  String
+  seatId     String
+  qrCode     String    @unique // Encrypted QR code data
+  expiryTime DateTime // When the ticket expires (usually after event end)
+  scannedAt  DateTime? // Timestamp when ticket was scanned
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  booking    Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seat       Seat      @relation(fields: [seatId], references: [id])
+}
+
+model Organizer {
+  id              String            @id @default(cuid())
+  userId          String           @unique
+  businessName    String
+  email           String
+  phone           String
+  address         String
+  contactPerson   String
+  aadhaarNumber   String
+  panNumber       String
+  gstNumber       String
+  status          OrganizerStatus  @default(PENDING)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents       OrganizerDocument[]
+  bankAccount     BankAccount?
+  events          Event[]
+  payouts         Payout[]
+  approvalHistory ApprovalHistory[]
+  organizePayouts OrganizePayout[]
+}
+
+enum OrganizerStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+model OrganizerDocument {
+  id                 String             @id @default(cuid())
+  organizerId        String
+  documentType       DocumentType
+  documentReference  String // Cloudinary asset ID, not direct URL
+  uploadedAt         DateTime           @default(now())
+  expiryDate         DateTime?
+  verificationStatus VerificationStatus @default(PENDING)
+  organizer          Organizer          @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+}
+
+enum DocumentType {
+  PAN_CARD
+  GST_CERTIFICATE
+  AADHAAR_CARD
+  BUSINESS_PROOF
+  IDENTITY_PROOF
+  BANK_STATEMENT
+  OTHER
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model BankAccount {
+  id                String    @id @default(cuid())
+  organizerId       String    @unique
+  accountNumber     String
+  ifscCode          String
+  accountHolderName String
+  bankName          String
+  branch            String?
+  isVerified        Boolean   @default(false)
+  razorpayContactId String? // For Razorpay Payouts
+  razorpayFundId    String? // For Razorpay Payouts
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  organizer         Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+}
+
+model ApprovalHistory {
+  id             String          @id @default(cuid())
+  organizerId    String
+  adminId        String
+  previousStatus OrganizerStatus
+  newStatus      OrganizerStatus
+  reason         String?
+  createdAt      DateTime        @default(now())
+  organizer      Organizer       @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  admin          User            @relation(fields: [adminId], references: [id])
+}
+
+model OrganizePayout {
+  id               String    @id @default(cuid())
+  organizerId      String
+  paymentId        String
+  amount           Decimal
+  currency         String    @default("INR")
+  razorpayPayoutId String    @unique
+  status           String
+  platformFee      Decimal
+  referenceId      String
+  processedAt      DateTime?
+  failureReason    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  organizer        Organizer @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  payment          Payment   @relation(fields: [paymentId], references: [id])
+}
+
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  adminId      String
+  action       String
+  resourceType String
+  resourceId   String
+  details      String?  @db.Text
+  createdAt    DateTime @default(now())
+  admin        User     @relation(fields: [adminId], references: [id])
+}
