@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 
 interface Document {
   id: string;
@@ -39,8 +39,10 @@ interface Organizer {
   bankAccount: BankAccount | null;
 }
 
-export default function OrganizerDetail({ params }: { params: { id: string } }) {
+export default function OrganizerDetail() {
   const router = useRouter();
+  const params = useParams();
+  const organizerId = params.id as string;
   const [organizer, setOrganizer] = useState<Organizer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -53,9 +55,7 @@ export default function OrganizerDetail({ params }: { params: { id: string } }) 
     const fetchOrganizerDetails = async () => {
       try {
         setLoading(true);
-        // This API endpoint is not shown in your provided code
-        // You would need to implement it
-        const response = await fetch(`/api/admin/organizers/${params.id}`);
+        const response = await fetch(`/api/admin/organizers/${organizerId}`);
         
         if (!response.ok) {
           throw new Error('Failed to fetch organizer details');
@@ -72,7 +72,7 @@ export default function OrganizerDetail({ params }: { params: { id: string } }) 
     };
 
     fetchOrganizerDetails();
-  }, [params.id]);
+  }, [organizerId]);
 
   const handleDocumentPreview = async (documentId: string) => {
     try {
@@ -97,7 +97,7 @@ export default function OrganizerDetail({ params }: { params: { id: string } }) 
     if (confirm('Are you sure you want to approve this organizer?')) {
       setProcessingAction(true);
       try {
-        const response = await fetch(`/api/admin/organizers/${params.id}/approve`, {
+        const response = await fetch(`/api/admin/organizers/${organizerId}/approve`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -132,7 +132,7 @@ export default function OrganizerDetail({ params }: { params: { id: string } }) 
 
     setProcessingAction(true);
     try {
-      const response = await fetch(`/api/admin/organizers/${params.id}/approve`, {
+      const response = await fetch(`/api/admin/organizers/${organizerId}/approve`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

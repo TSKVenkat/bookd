@@ -1,14 +1,41 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
-import { verifyPassword, generateToken, getSafeUser } from '@/lib/auth';
-import { LoginCredentials } from '@/types/auth';
+import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
+import { SignJWT } from 'jose';
 
-export async function POST(request: Request) {
+// Type declarations for modules without types
+declare module 'uuid';
+
+export const runtime = 'nodejs';
+
+// JWT Secret
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'fallback_secret_key_for_dev'
+);
+
+// JWT token generation
+const generateToken = async (user: any): Promise<string> => {
+  const payload = { 
+    userId: user.id, 
+    email: user.email, 
+    role: user.role 
+  };
+  
+  console.log('Creating JWT with payload:', payload);
+  
+  return await new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('7d')
+    .setIssuedAt()
+    .sign(JWT_SECRET);
+};
+
+export async function POST(request: NextRequest) {
   try {
-    const body: LoginCredentials = await request.json();
-    const { email, password } = body;
+    const { email, password } = await request.json();
     
-    // Basic validation
     if (!email || !password) {
       return NextResponse.json(
         { error: 'Email and password are required' },
@@ -16,13 +43,25 @@ export async function POST(request: Request) {
       );
     }
     
-    // Find user
+    // Find user by email
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      include: {
+        organizer: true
+      }
     });
     
-    // Check if user exists and password is correct
-    if (!user || !(await verifyPassword(password, user.hashedPassword))) {
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid email or password' },
+        { status: 401 }
+      );
+    }
+    
+    // Verify password
+    const isValid = await bcrypt.compare(password, user.hashedPassword);
+    
+    if (!isValid) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -30,29 +69,44 @@ export async function POST(request: Request) {
     }
     
     // Generate JWT token
-    const token = await generateToken({
-      id: user.id,
-      role: user.role || 'user'
+    const token = await generateToken(user);
+    
+    // Create session with JWT token
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
+    
+    const session = await prisma.session.create({
+      data: {
+        id: uuidv4(),
+        userId: user.id,
+        token: token, // Include the JWT token
+        expiresAt
+      }
     });
     
-    // Set HTTP-only cookie with session token
-    const response = NextResponse.json(
-      { user: getSafeUser(user) },
-      { status: 200 }
-    );
-    
-    response.cookies.set({
+    // Set session cookie
+    const cookieStore = await cookies();
+    cookieStore.set({
       name: 'session_token',
-      value: token,
+      value: session.token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
       path: '/',
-      maxAge: 60 * 60 * 24 // 24 hours
+      expires: expiresAt,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
     });
     
-    return response;
-    
+    // Return user data and token
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        organizer: user.organizer
+      },
+      token: session.token
+    });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

@@ -117,7 +117,7 @@ export async function POST(request: Request) {
           phone: data.phone,
           address: data.address || '',
           panNumber: data.panNumber,
-          gstNumber: data.gstNumber,
+          gstNumber: data.gstNumber || '',
           aadhaarNumber: data.aadhaarNumber,
           status: OrganizerStatus.PENDING,
           bankAccount: {

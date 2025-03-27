@@ -1,16 +1,27 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { validateSession } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const session = await getServerSession();
-
-    if (!session) {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get('session_token')?.value;
+    
+    if (!sessionToken) {
       return NextResponse.json(
         { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
+    const user = await validateSession(sessionToken);
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Invalid session' },
         { status: 401 }
       );
     }
@@ -18,7 +29,7 @@ export async function GET() {
     // Get organizer profile
     const organizer = await prisma.organizer.findFirst({
       where: {
-        userId: session.id,
+        userId: user.id,
         status: 'APPROVED'
       }
     });
@@ -48,4 +59,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-} 
+}

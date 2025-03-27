@@ -1,36 +1,40 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { invalidateSession } from '@/lib/auth';
+import { getSessionToken, invalidateSession } from '@/lib/auth';
+
+export const runtime = 'nodejs';
 
 export async function POST() {
   try {
-    const cookieStore = await cookies();
-    const sessionToken = cookieStore.get('session_token')?.value;
+    const token = await getSessionToken();
     
-    if (sessionToken) {
-      await invalidateSession(sessionToken);
+    if (token) {
+      // Try to invalidate the session in database
+      await invalidateSession(token);
     }
     
-    const response = NextResponse.json(
-      { message: 'Logged out successfully' },
-      { status: 200 }
-    );
-    
-    // Clear the cookie
-    response.cookies.set({
+    // Clear the session cookie regardless
+    const cookieStore = await cookies();
+    cookieStore.set({
       name: 'session_token',
       value: '',
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 0 // Expire immediately
+      expires: new Date(0),
+      path: '/'
     });
     
-    return response;
-    
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Logout error:', error);
+    
+    // Still clear cookies even if there was an error
+    const cookieStore = await cookies();
+    cookieStore.set({
+      name: 'session_token',
+      value: '',
+      expires: new Date(0),
+      path: '/'
+    });
+    
     return NextResponse.json(
       { error: 'An error occurred during logout' },
       { status: 500 }

@@ -1,11 +1,39 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
-import { hashPassword, generateToken, getSafeUser, createSession } from '@/lib/auth';
-import { RegisterData } from '@/types/auth';
+import { hashPassword } from '@/lib/auth';
+import { v4 as uuidv4 } from 'uuid';
+import { SignJWT } from 'jose';
+
+declare module 'uuid';
+
+// JWT Secret
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'fallback_secret_key_for_dev'
+);
+
+export const runtime = 'nodejs';
+
+// JWT token generation
+const generateToken = async (user: any): Promise<string> => {
+  const payload = { 
+    userId: user.id, 
+    email: user.email, 
+    role: user.role 
+  };
+  
+  console.log('Creating JWT with payload:', payload);
+  
+  return await new SignJWT(payload)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setExpirationTime('7d')
+    .setIssuedAt()
+    .sign(JWT_SECRET);
+};
 
 export async function POST(request: Request) {
   try {
-    const body: RegisterData = await request.json();
+    const body = await request.json();
     const { email, password, name } = body;
     
     // Basic validation
@@ -40,28 +68,43 @@ export async function POST(request: Request) {
     });
     
     // Generate JWT token
-    const token = generateToken(user.id);
+    const token = await generateToken(user);
     
-    // Create session
-    const sessionToken = await createSession(user.id);
+    // Create session with JWT token
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
     
-    // Set HTTP-only cookie with session token
-    const response = NextResponse.json(
-      { user: getSafeUser(user), token },
-      { status: 201 }
-    );
-    
-    response.cookies.set({
-      name: 'session_token',
-      value: sessionToken,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 60 * 60 * 24 // 24 hours
+    const session = await prisma.session.create({
+      data: {
+        id: uuidv4(),
+        userId: user.id,
+        token: token,
+        expiresAt
+      }
     });
     
-    return response;
+    // Set session cookie
+    const cookieStore = await cookies();
+    cookieStore.set({
+      name: 'session_token',
+      value: session.token,
+      httpOnly: true,
+      path: '/',
+      expires: expiresAt,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax'
+    });
+    
+    // Return user data and token
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      },
+      token: session.token
+    }, { status: 201 });
     
   } catch (error) {
     console.error('Registration error:', error);

@@ -2,199 +2,168 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-interface SeatType {
-  id: string;
-  name: string;
-  price: number;
-  color: string;
+interface SeatMapProps {
+  eventId: string;
 }
 
-interface SeatData {
+interface Seat {
+  id: string;
   row: string;
   number: string;
-  typeId: string;
-  status: 'available' | 'locked' | 'confirmed';
+  status: string;
+  ticketType: {
+    name: string;
+    color: string;
+  };
 }
 
-interface SeatMapData {
-  rows: number;
-  seatsPerRow: number;
-  seats: SeatData[];
-}
-
-export default function SeatMap({ eventId }: { eventId: string }) {
+export default function SeatMap({ eventId }: SeatMapProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [seatTypes, setSeatTypes] = useState<SeatType[]>([]);
-  const [selectedType, setSelectedType] = useState<string>('');
-  const [mapData, setMapData] = useState<SeatMapData>({
-    rows: 10,
-    seatsPerRow: 10,
-    seats: []
-  });
-
+  const [seats, setSeats] = useState<Seat[]>([]);
+  
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [seatMapRes, typesRes] = await Promise.all([
-          fetch(`/api/organizer/events/${eventId}/seatmap`),
-          fetch(`/api/organizer/events/${eventId}/ticket-types`)
-        ]);
-
-        if (typesRes.ok) {
-          const types = await typesRes.json();
-          setSeatTypes(types);
-          if (types.length > 0) setSelectedType(types[0].id);
-        }
-
-        if (seatMapRes.ok) {
-          const data = await seatMapRes.json();
-          setMapData(data);
-        }
-      } catch (err) {
-        setError('Failed to load seat map data');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
+    fetchSeatMap();
   }, [eventId]);
 
-  const handleSeatClick = (row: number, seat: number) => {
-    if (!selectedType) return;
-
-    const rowLetter = String.fromCharCode(65 + row); // Convert 0 to A, 1 to B, etc.
-    const seatNumber = (seat + 1).toString().padStart(2, '0');
-
-    setMapData(prev => {
-      const seats = [...prev.seats];
-      const existingSeatIndex = seats.findIndex(
-        s => s.row === rowLetter && s.number === seatNumber
-      );
-
-      if (existingSeatIndex >= 0) {
-        // If clicking the same type, remove the seat
-        if (seats[existingSeatIndex].typeId === selectedType) {
-          seats.splice(existingSeatIndex, 1);
-        } else {
-          // Otherwise, update the type
-          seats[existingSeatIndex].typeId = selectedType;
-        }
-      } else {
-        // Add new seat
-        seats.push({
-          row: rowLetter,
-          number: seatNumber,
-          typeId: selectedType,
-          status: 'available'
-        });
-      }
-
-      return { ...prev, seats };
-    });
-  };
-
-  const getSeatColor = (row: number, seat: number) => {
-    const rowLetter = String.fromCharCode(65 + row);
-    const seatNumber = (seat + 1).toString().padStart(2, '0');
-    const seatData = mapData.seats.find(
-      s => s.row === rowLetter && s.number === seatNumber
-    );
-
-    if (!seatData) return 'bg-gray-200';
-    const type = seatTypes.find(t => t.id === seatData.typeId);
-    return type?.color || 'bg-gray-200';
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    setError('');
-
+  const fetchSeatMap = async () => {
     try {
-      const response = await fetch(`/api/organizer/events/${eventId}/seatmap`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(mapData),
-      });
-
-      if (!response.ok) throw new Error('Failed to save seat map');
-
-      router.refresh();
+      setLoading(true);
+      const response = await fetch(`/api/organizer/events/${eventId}/seatmap`);
+      
+      if (!response.ok && response.status !== 404) {
+        throw new Error('Failed to fetch seat map');
+      }
+      
+      if (response.status === 404) {
+        // No seat map exists yet
+        setSeats([]);
+      } else {
+        const data = await response.json();
+        setSeats(data);
+      }
     } catch (err) {
-      setError('Failed to save seat map');
-      console.error(err);
+      console.error('Error fetching seat map:', err);
+      setError('Failed to load seat map');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
-  if (loading) return <div>Loading...</div>;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Seat Map</h2>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
+  if (loading) {
+    return (
+      <div className="p-6 text-center">
+        <div className="animate-pulse">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mx-auto mb-4"></div>
+          <div className="h-64 bg-gray-200 rounded w-full mx-auto"></div>
+        </div>
       </div>
+    );
+  }
 
-      {error && (
-        <div className="bg-red-50 text-red-500 p-4 rounded-lg">
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 text-red-500 p-4 rounded-lg mb-6">
           {error}
         </div>
-      )}
-
-      <div className="flex gap-6">
-        <div className="w-64 space-y-4">
-          <h3 className="font-medium">Seat Types</h3>
-          <div className="space-y-2">
-            {seatTypes.map(type => (
-              <button
-                key={type.id}
-                onClick={() => setSelectedType(type.id)}
-                className={`w-full p-2 text-left rounded-md ${
-                  selectedType === type.id ? 'ring-2 ring-blue-500' : ''
-                } ${type.color}`}
-              >
-                {type.name} - ₹{type.price}
-              </button>
-            ))}
-          </div>
+        <div className="text-center">
+          <button
+            onClick={() => fetchSeatMap()}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+          >
+            Try Again
+          </button>
         </div>
+      </div>
+    );
+  }
 
-        <div className="flex-1">
-          <div className="w-full aspect-video bg-gray-100 p-8 rounded-lg overflow-auto">
-            <div className="grid gap-2" style={{
-              gridTemplateColumns: `repeat(${mapData.seatsPerRow}, minmax(0, 1fr))`
-            }}>
-              {Array.from({ length: mapData.rows * mapData.seatsPerRow }).map((_, index) => {
-                const row = Math.floor(index / mapData.seatsPerRow);
-                const seat = index % mapData.seatsPerRow;
-                return (
-                  <button
-                    key={index}
-                    onClick={() => handleSeatClick(row, seat)}
-                    className={`aspect-square rounded-md ${getSeatColor(row, seat)} hover:opacity-75 transition-opacity`}
-                  >
-                    {String.fromCharCode(65 + row)}
-                    {(seat + 1).toString().padStart(2, '0')}
-                  </button>
-                );
-              })}
+  if (seats.length === 0) {
+    return (
+      <div className="p-6 text-center">
+        <div className="bg-yellow-50 text-yellow-600 p-4 rounded-lg mb-6">
+          No seat map has been created for this event yet.
+        </div>
+        <Link
+          href={`/organizer/events/${eventId}/seatmap`}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+        >
+          Create Seat Map
+        </Link>
+      </div>
+    );
+  }
+
+  // Group seats by row
+  const seatsByRow = seats.reduce((acc, seat) => {
+    if (!acc[seat.row]) {
+      acc[seat.row] = [];
+    }
+    acc[seat.row].push(seat);
+    return acc;
+  }, {} as Record<string, Seat[]>);
+
+  // Sort rows alphabetically
+  const sortedRows = Object.keys(seatsByRow).sort();
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold">Seat Map</h2>
+        <Link
+          href={`/organizer/events/${eventId}/seatmap`}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+        >
+          Edit Seat Map
+        </Link>
+      </div>
+      
+      <div className="bg-gray-100 p-4 rounded-lg mb-4">
+        <div className="w-full bg-gray-300 p-3 text-center font-medium mb-6">
+          Stage
+        </div>
+        
+        <div className="space-y-2">
+          {sortedRows.map(row => (
+            <div key={row} className="flex items-center">
+              <div className="w-6 font-medium text-gray-600">{row}</div>
+              <div className="flex flex-wrap gap-1">
+                {seatsByRow[row]
+                  .sort((a, b) => parseInt(a.number) - parseInt(b.number))
+                  .map(seat => (
+                    <div
+                      key={seat.id}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-xs"
+                      style={{ backgroundColor: seat.ticketType.color }}
+                      title={`${seat.row}${seat.number} - ${seat.ticketType.name} - ${seat.status}`}
+                    >
+                      {seat.number}
+                    </div>
+                  ))}
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="mt-6">
+        <h3 className="text-lg font-medium mb-3">Ticket Types</h3>
+        <div className="flex flex-wrap gap-3">
+          {Array.from(new Set(seats.map(s => JSON.stringify({ name: s.ticketType.name, color: s.ticketType.color }))))
+            .map(s => JSON.parse(s))
+            .map((ticketType: { name: string; color: string }, index: number) => (
+              <div key={index} className="flex items-center">
+                <div
+                  className="w-4 h-4 rounded-sm mr-1"
+                  style={{ backgroundColor: ticketType.color }}
+                ></div>
+                <span className="text-sm">{ticketType.name}</span>
+              </div>
+            ))}
         </div>
       </div>
     </div>

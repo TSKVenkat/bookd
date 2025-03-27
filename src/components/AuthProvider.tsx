@@ -79,8 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       setUser(data.user);
-      // Store token in localStorage for API requests
-      localStorage.setItem('auth_token', data.token);
+      // Token is already set in HTTP-only cookie by the server
       
     } catch (err: any) {
       setError(err.message);
@@ -110,8 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       setUser(data.user);
-      // Store token in localStorage for API requests
-      localStorage.setItem('auth_token', data.token);
+      // Token is already set in HTTP-only cookie by the server
       
     } catch (err: any) {
       setError(err.message);
@@ -130,9 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         method: 'POST',
       });
       
-      // Clear user and token regardless of API response
+      // Clear user state
       setUser(null);
-      localStorage.removeItem('auth_token');
       
       router.push('/login');
       

@@ -25,8 +25,14 @@ interface Venue {
   city: string;
 }
 
+// Helper function to extract ID safely
+function getEventId(params: { id: string }) {
+  return params.id;
+}
+
 export default function EditEvent({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const eventId = getEventId(params);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -47,9 +53,9 @@ export default function EditEvent({ params }: { params: { id: string } }) {
     const fetchData = async () => {
       try {
         const [eventRes, artistsRes, venuesRes] = await Promise.all([
-          fetch(`/api/organizer/events/${params.id}`),
-          fetch('/api/artists'),
-          fetch('/api/venues')
+          fetch(`/api/organizer/events/${eventId}`),
+          fetch('/api/organizer/events/artists'),
+          fetch('/api/organizer/events/venues')
         ]);
 
         if (!eventRes.ok) throw new Error('Failed to fetch event');
@@ -92,7 +98,7 @@ export default function EditEvent({ params }: { params: { id: string } }) {
     };
 
     fetchData();
-  }, [params.id]);
+  }, [eventId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData(prev => ({
@@ -132,7 +138,7 @@ export default function EditEvent({ params }: { params: { id: string } }) {
     setError('');
 
     try {
-      const response = await fetch(`/api/organizer/events/${params.id}`, {
+      const response = await fetch(`/api/organizer/events/${eventId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

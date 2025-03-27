@@ -54,17 +54,22 @@ model Event {
   bookings    Booking[]
 }
 
+// Update to your prisma/schema.prisma file
+
 model Venue {
   id          String   @id @default(cuid())
+  organizerId String
   name        String
   address     String
   city        String
   state       String
   country     String
-  zipCode     String
+  pinCode     String
   capacity    Int
   description String?  @db.Text
   thumbnail   String?
+  latitude    Float?
+  longitude   Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   events      Event[]
@@ -115,6 +120,7 @@ model TicketType {
   name        String
   description String?
   price       Decimal
+  color       String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)

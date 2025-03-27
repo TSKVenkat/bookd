@@ -1,94 +1,54 @@
 import { NextResponse } from 'next/server';
-import { v2 as cloudinary } from 'cloudinary';
+import { validateSessionFromCookies } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { validateSession } from '@/lib/auth';
-import { cookies } from 'next/headers';
+import cloudinary from '@/lib/cloudinary';
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true
-});
-
-export async function GET(
-  request: Request,
-  context: { params: { id: string } }
-) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
-    // Authenticate user
-    const cookieStore = await cookies();
-    const sessionToken = cookieStore.get('session_token')?.value;
-    
-    if (!sessionToken) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-    
-    const user = await validateSession(sessionToken);
+    const user = await validateSessionFromCookies();
     
     if (!user) {
-      return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const { id: documentId } = context.params;
-    if (!documentId) {
-      return NextResponse.json(
-        { error: 'Document ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // Get document with organizer details
+    
+    // Ensure params is properly awaited
+    const { id: documentId } = params;
+    
+    // Check if the document exists
     const document = await prisma.organizerDocument.findUnique({
       where: { id: documentId },
       include: {
         organizer: true
       }
     });
-
+    
     if (!document) {
-      return NextResponse.json(
-        { error: 'Document not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
-
-    // Check if user owns this document
-    if (document.organizer.userId !== user.id) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+    
+    // Check if the user is authorized to view this document
+    if (document.organizer.userId !== user.id && user.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
-
-    // Generate a short-lived signed URL (valid for 15 minutes)
-    const signedUrl = cloudinary.url(document.documentReference, {
-      secure: true,
-      resource_type: 'auto',
-      type: 'authenticated',
-      sign_url: true,
-      expires_at: Math.floor(Date.now() / 1000) + 900 // 15 minutes
-    });
-
-    return NextResponse.json({
-      id: document.id,
-      documentType: document.documentType,
-      uploadedAt: document.uploadedAt,
-      url: signedUrl
-    });
-
+    
+    // Get the document from Cloudinary
+    try {
+      // Generate a signed URL with a short expiration
+      const result = cloudinary.utils.api_sign_request({
+        public_id: document.documentReference,
+        timestamp: Math.floor(Date.now() / 1000)
+      }, process.env.CLOUDINARY_API_SECRET!);
+      
+      const signedUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/v1/${document.documentReference}?signature=${result}&timestamp=${Math.floor(Date.now() / 1000)}`;
+      
+      return NextResponse.json({ url: signedUrl });
+    } catch (cloudinaryError) {
+      console.error("Cloudinary error:", cloudinaryError);
+      return NextResponse.json({ error: "Failed to retrieve document" }, { status: 500 });
+    }
+    
   } catch (error) {
-    console.error('Document view error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate document URL' },
-      { status: 500 }
-    );
+    console.error("Error retrieving document:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

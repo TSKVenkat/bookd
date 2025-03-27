@@ -6,7 +6,6 @@ import { Tab } from '@headlessui/react';
 import EventsList from './organizer/EventsList';
 import CreateEvent from './organizer/CreateEvent';
 import PayoutHistory from './organizer/PayoutHistory';
-import DocumentsManager from './organizer/DocumentsManager';
 import BankDetails from './organizer/BankDetails';
 
 function classNames(...classes: string[]) {
@@ -21,7 +20,6 @@ export default function OrganizerDashboard() {
     { name: 'Events', component: <EventsList /> },
     { name: 'Create Event', component: <CreateEvent /> },
     { name: 'Payouts', component: <PayoutHistory /> },
-    { name: 'Documents', component: <DocumentsManager /> },
     { name: 'Bank Details', component: <BankDetails /> },
   ];
 

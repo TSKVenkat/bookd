@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import prisma from '@/lib/prisma';
+import { validateSessionFromCookies } from '@/lib/auth';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = await validateSessionFromCookies();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const organizer = await prisma.organizer.findFirst({
       where: {
-        user: {
-          email: session.user.email
-        },
+        userId: user.id,
         status: 'APPROVED'
       }
     });
@@ -25,9 +24,12 @@ export async function GET(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
+    // Ensure params is properly awaited
+    const { id: eventId } = params;
+
     const event = await prisma.event.findFirst({
       where: {
-        id: params.id,
+        id: eventId,
         organizerId: organizer.id
       },
       include: {
@@ -55,16 +57,15 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = await validateSessionFromCookies();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const organizer = await prisma.organizer.findFirst({
       where: {
-        user: {
-          email: session.user.email
-        },
+        userId: user.id,
         status: 'APPROVED'
       }
     });
@@ -73,10 +74,13 @@ export async function PUT(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
+    // Ensure params is properly awaited
+    const { id: eventId } = params;
+
     // Check if event exists and belongs to the organizer
     const existingEvent = await prisma.event.findFirst({
       where: {
-        id: params.id,
+        id: eventId,
         organizerId: organizer.id
       }
     });
@@ -90,7 +94,7 @@ export async function PUT(
 
     const event = await prisma.event.update({
       where: {
-        id: params.id
+        id: eventId
       },
       data: {
         name,
@@ -118,16 +122,15 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const user = await validateSessionFromCookies();
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
     const organizer = await prisma.organizer.findFirst({
       where: {
-        user: {
-          email: session.user.email
-        },
+        userId: user.id,
         status: 'APPROVED'
       }
     });
@@ -136,10 +139,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
+    // Ensure params is properly awaited
+    const { id: eventId } = params;
+
     // Check if event exists and belongs to the organizer
     const event = await prisma.event.findFirst({
       where: {
-        id: params.id,
+        id: eventId,
         organizerId: organizer.id
       }
     });
@@ -151,7 +157,7 @@ export async function DELETE(
     // Check if event has any bookings
     const bookingsCount = await prisma.booking.count({
       where: {
-        eventId: params.id
+        eventId
       }
     });
 
@@ -165,7 +171,7 @@ export async function DELETE(
     // Delete the event
     await prisma.event.delete({
       where: {
-        id: params.id
+        id: eventId
       }
     });
 
@@ -177,4 +183,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}

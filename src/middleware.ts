@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyToken } from './lib/auth';
+import { jwtVerify } from 'jose';
+
+// Constants
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || 'fallback-secret-key-for-development-only'
+);
 
 // Paths that don't require authentication
 const publicPaths = [
@@ -14,106 +19,119 @@ const publicPaths = [
   ...(process.env.NODE_ENV === 'development' ? ['/api/dev/make-admin'] : [])
 ];
 
-// Auth-only paths that logged-in users should be redirected to
+// Auth-only paths that logged-in users should be redirected from
 const authRedirectPaths = [
   '/login',
   '/register',
   '/reset-password'
 ];
 
-// Admin-only paths
-const adminPaths = [
-  '/admin',
-  '/api/admin'
-];
+// Role-specific paths
+const roleRestrictedPaths = {
+  admin: ['/admin', '/api/admin'],
+  organizer: ['/organizer', '/api/organizer'],
+  venue_staff: ['/venue', '/api/venue']
+};
 
-// Organizer-only paths
-const organizerPaths = [
-  '/organizer',
-  '/api/organizer'
-];
+async function verifyAuth(request: NextRequest) {
+  const token = request.cookies.get('session_token')?.value;
+  
+  if (!token) {
+    console.log('No session token found in cookies');
+    return null;
+  }
+
+  try {
+    console.log('Verifying token in middleware');
+    const { payload } = await jwtVerify(token, JWT_SECRET, {
+      algorithms: ['HS256']
+    });
+    
+    console.log('JWT payload in middleware:', payload);
+    
+    // Extract userId and ensure it exists
+    const userId = payload.userId as string;
+    if (!userId) {
+      console.error('Missing userId in JWT payload:', payload);
+      return null;
+    }
+    
+    // Extract role, default to 'user' if not specified
+    const role = (payload.role as string) || 'user';
+    
+    return { userId, role };
+  } catch (error) {
+    console.error('Token verification error in middleware:', error);
+    return null;
+  }
+}
+
+function matchesPath(pathname: string, paths: string[]) {
+  return paths.some(path => pathname === path || pathname.startsWith(path + '/'));
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // Check for auth token in cookies first
-  const sessionToken = request.cookies.get('session_token')?.value;
-  let isAuthenticated = false;
-  let isAdmin = false;
-  let isOrganizer = false;
-  
-  if (sessionToken) {
-    try {
-      const decoded = await verifyToken(sessionToken);
-      if (decoded) {
-        isAuthenticated = true;
-        isAdmin = decoded.role === 'admin';
-        isOrganizer = decoded.role === 'organizer';
-      }
-    } catch (error) {
-      console.error('Token verification error:', error);
-    }
-  }
-  
-  // If authenticated and trying to access login/register pages, redirect to appropriate dashboard
-  if (isAuthenticated && authRedirectPaths.includes(pathname)) {
-    if (isAdmin) {
-      return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-    }
-    if (isOrganizer) {
-      return NextResponse.redirect(new URL('/organizer/dashboard', request.url));
-    }
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
-  
-  // If not authenticated and path is public, allow access
-  if (!isAuthenticated && publicPaths.some(path => pathname === path || pathname.startsWith(path + '/'))) {
+  // Allow public paths without authentication
+  if (matchesPath(pathname, publicPaths)) {
     return NextResponse.next();
   }
+
+  // Verify authentication
+  const auth = await verifyAuth(request);
   
-  // Check for admin paths
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-    if (!isAuthenticated) {
-      return NextResponse.redirect(new URL('/login', request.url));
-    }
-    if (!isAdmin) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
+  // If authenticated and trying to access auth pages, redirect to dashboard
+  if (auth && matchesPath(pathname, authRedirectPaths)) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
-  
-  // Check for organizer paths
-  if (pathname.startsWith('/organizer') || pathname.startsWith('/api/organizer')) {
-    if (!isAuthenticated) {
-      return NextResponse.redirect(new URL('/login', request.url));
+
+  // If not authenticated, handle appropriately
+  if (!auth) {
+    // For API requests, return 401
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    // Special case for /organizer/apply - allow regular users to access it
+    // For page requests, redirect to login
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // Handle role-specific access
+  const userRole = auth.role;
+  
+  // Check admin paths
+  if (matchesPath(pathname, roleRestrictedPaths.admin) && userRole !== 'admin') {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
+  // Check organizer paths (except /organizer/apply)
+  if (matchesPath(pathname, roleRestrictedPaths.organizer)) {
     if (pathname === '/organizer/apply' || pathname === '/api/organizer/apply') {
       return NextResponse.next();
     }
-    // For all other organizer paths, require organizer role
-    if (!isOrganizer) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    if (userRole !== 'organizer') {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      return NextResponse.redirect(new URL('/', request.url));
     }
   }
-  
-  // If authenticated, allow request to proceed
-  if (isAuthenticated) {
-    return NextResponse.next();
+
+  // Check venue staff paths
+  if (matchesPath(pathname, roleRestrictedPaths.venue_staff) && userRole !== 'venue_staff') {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL('/', request.url));
   }
-  
-  // If API request, return 401 unauthorized
-  if (pathname.startsWith('/api/')) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    );
-  }
-  
-  // For page requests, redirect to login
-  return NextResponse.redirect(new URL('/login', request.url));
+
+  // Allow authenticated request to proceed
+  return NextResponse.next();
 }
 
-// Configure which paths the middleware runs on
 export const config = {
   matcher: [
     /*

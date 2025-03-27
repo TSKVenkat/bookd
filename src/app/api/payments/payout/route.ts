@@ -1,6 +1,6 @@
 // app/api/payments/payout/route.ts
 import { NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
+import { validateSessionFromCookies } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
 export const runtime = 'nodejs';
@@ -8,9 +8,9 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     // Authenticate user
-    const session = await getServerSession();
+    const user = await validateSessionFromCookies();
     
-    if (!session) {
+    if (!user) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     // Get organizer profile
     const organizer = await prisma.organizer.findFirst({
       where: {
-        userId: session.id,
+        userId: user.id,
         status: 'APPROVED'
       }
     });
