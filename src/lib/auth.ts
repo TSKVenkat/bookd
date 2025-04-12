@@ -3,6 +3,7 @@ import prisma from './prisma';
 import { randomBytes } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import jwt from 'jsonwebtoken';
 
 // Constants
 const TOKEN_EXPIRY = '24h';
@@ -31,19 +32,17 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 }
 
 // JWT Token Management
-export async function generateToken(user: { id: string; role: string }): Promise<string> {
-  const payload = {
-    userId: user.id,
-    role: user.role
-  };
+export async function generateToken(user: any) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not defined');
+  }
   
-  console.log('Creating token with payload:', payload);
-  
-  return await new SignJWT(payload)
-    .setProtectedHeader({ alg: 'HS256' })
-    .setExpirationTime(TOKEN_EXPIRY)
-    .setIssuedAt()
-    .sign(JWT_SECRET);
+  return jwt.sign(
+    { userId: user.id },
+    secret,
+    { expiresIn: '7d' }
+  );
 }
 
 export async function verifyToken(token: string): Promise<{ userId: string; role: string } | null> {
@@ -117,35 +116,27 @@ export async function getSessionToken(): Promise<string | undefined> {
 }
 
 // Session Validation
-export async function validateSession(token: string): Promise<UserSession | null> {
+export async function validateSession(token: string) {
   try {
-    const decoded = await verifyToken(token);
-    if (!decoded || !decoded.userId) {
-      console.error('validateSession: Invalid or missing userId in token', decoded);
-      return null;
+    // Verify JWT
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_SECRET is not defined');
     }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true
-      }
+    
+    const decoded = jwt.verify(token, secret) as { userId: string };
+    
+    // Find session in database
+    const session = await prisma.session.findUnique({
+      where: { token },
+      include: { user: true }
     });
-
-    if (!user) {
-      console.error(`validateSession: User not found for ID: ${decoded.userId}`);
+    
+    if (!session || session.expiresAt < new Date()) {
       return null;
     }
-
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role
-    };
+    
+    return session.user;
   } catch (error) {
     console.error('Session validation error:', error);
     return null;
@@ -153,23 +144,18 @@ export async function validateSession(token: string): Promise<UserSession | null
 }
 
 // Main Authentication Function
-export async function validateSessionFromCookies(): Promise<UserSession | null> {
+export async function validateSessionFromCookies() {
   try {
-    const token = await getSessionToken();
-    if (!token) {
-      console.log('No token found in cookies during validation');
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get('session_token')?.value;
+    
+    if (!sessionToken) {
       return null;
     }
     
-    const session = await validateSession(token);
-    if (!session) {
-      console.log('Invalid or expired session token');
-      return null;
-    }
-    
-    return session;
+    return await validateSession(sessionToken);
   } catch (error) {
-    console.error('Error validating session from cookies:', error);
+    console.error('Authentication error:', error);
     return null;
   }
 }

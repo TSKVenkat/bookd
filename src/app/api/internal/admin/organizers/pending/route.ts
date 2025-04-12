@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { OrganizerStatus } from '@prisma/client';
 import { headers } from 'next/headers';
 import { validateSession } from '@/lib/auth';
+import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
 
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
     // Log this access for audit purposes
     await prisma.adminAuditLog.create({
       data: {
+        id: uuidv4(),
         adminId: session.id,
         action: 'LIST_PENDING_ORGANIZERS',
         resourceType: 'ORGANIZER',

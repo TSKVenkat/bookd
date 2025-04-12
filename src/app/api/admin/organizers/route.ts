@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { validateSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function GET(request: Request) {
   try {
@@ -67,6 +68,7 @@ export async function GET(request: Request) {
     // Log this access for audit purposes
     await prisma.adminAuditLog.create({
       data: {
+        id: uuidv4(),
         adminId: user.id,
         action: 'LIST_ORGANIZERS',
         resourceType: 'ORGANIZER',

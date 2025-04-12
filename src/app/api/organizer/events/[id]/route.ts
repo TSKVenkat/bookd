@@ -24,7 +24,7 @@ export async function GET(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
-    // Ensure params is properly awaited
+    // Use destructuring instead of awaiting params
     const { id: eventId } = params;
 
     const event = await prisma.event.findFirst({
@@ -74,7 +74,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
-    // Ensure params is properly awaited
+    // Use destructuring instead of awaiting params
     const { id: eventId } = params;
 
     // Check if event exists and belongs to the organizer
@@ -139,7 +139,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
     }
 
-    // Ensure params is properly awaited
+    // Use destructuring instead of awaiting params
     const { id: eventId } = params;
 
     // Check if event exists and belongs to the organizer

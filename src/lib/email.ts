@@ -77,3 +77,155 @@ export async function sendPasswordResetEmail(email: string, resetToken: string):
   
   return await sendEmail({ to: email, subject, html });
 }
+
+// Configure email transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: parseInt(process.env.EMAIL_PORT || '587'),
+  secure: process.env.EMAIL_SECURE === 'true',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
+
+// Send email to organizer about ticket sales
+export async function sendTicketSaleNotification(
+  organizerEmail: string,
+  eventName: string,
+  ticketCount: number,
+  totalAmount: number,
+  customerName: string
+) {
+  try {
+    await transporter.sendMail({
+      from: `"Event Platform" <${process.env.EMAIL_FROM}>`,
+      to: organizerEmail,
+      subject: `New Ticket Sale for ${eventName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>New Ticket Sale</h2>
+          <p>Hello,</p>
+          <p>You have a new ticket sale for your event <strong>${eventName}</strong>.</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Customer:</strong> ${customerName}</p>
+            <p><strong>Tickets Purchased:</strong> ${ticketCount}</p>
+            <p><strong>Total Amount:</strong> $${totalAmount.toFixed(2)}</p>
+          </div>
+          <p>Log in to your dashboard to view more details.</p>
+          <p>Thank you for using our platform!</p>
+        </div>
+      `
+    });
+    
+    console.log(`Ticket sale notification sent to ${organizerEmail}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending ticket sale notification:', error);
+    return false;
+  }
+}
+
+// Send email to customer with ticket details
+export async function sendTicketConfirmation(
+  customerEmail: string,
+  eventName: string,
+  eventDate: Date,
+  venueName: string,
+  tickets: any[],
+  totalAmount: number,
+  bookingReference: string
+) {
+  try {
+    const ticketListHtml = tickets.map(ticket => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticket.ticketType.name}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">${ticket.seat ? `${ticket.seat.row}${ticket.seat.number}` : 'General Admission'}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">$${ticket.ticketType.price.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    await transporter.sendMail({
+      from: `"Event Platform" <${process.env.EMAIL_FROM}>`,
+      to: customerEmail,
+      subject: `Your Tickets for ${eventName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Your Ticket Confirmation</h2>
+          <p>Hello,</p>
+          <p>Thank you for purchasing tickets to <strong>${eventName}</strong>.</p>
+          
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Event:</strong> ${eventName}</p>
+            <p><strong>Date:</strong> ${eventDate.toLocaleDateString()} at ${eventDate.toLocaleTimeString()}</p>
+            <p><strong>Venue:</strong> ${venueName}</p>
+            <p><strong>Booking Reference:</strong> ${bookingReference}</p>
+          </div>
+          
+          <h3>Your Tickets</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #f0f0f0;">
+                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Ticket Type</th>
+                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Seat</th>
+                <th style="padding: 8px; text-align: left; border-bottom: 2px solid #ddd;">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${ticketListHtml}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" style="padding: 8px; text-align: right; font-weight: bold;">Total:</td>
+                <td style="padding: 8px; font-weight: bold;">$${totalAmount.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          
+          <p style="margin-top: 20px;">Please bring this confirmation or your booking reference to the event.</p>
+          <p>We hope you enjoy the event!</p>
+        </div>
+      `
+    });
+    
+    console.log(`Ticket confirmation sent to ${customerEmail}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending ticket confirmation:', error);
+    return false;
+  }
+}
+
+// Send email notification about seatmap changes
+export async function sendSeatMapUpdateNotification(
+  organizerEmail: string,
+  eventName: string,
+  totalSeats: number
+) {
+  try {
+    await transporter.sendMail({
+      from: `"Event Platform" <${process.env.EMAIL_FROM}>`,
+      to: organizerEmail,
+      subject: `Seat Map Updated for ${eventName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Seat Map Updated</h2>
+          <p>Hello,</p>
+          <p>The seat map for your event <strong>${eventName}</strong> has been updated.</p>
+          <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Total Seats:</strong> ${totalSeats}</p>
+            <p><strong>Updated At:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          <p>Log in to your dashboard to view the updated seat map.</p>
+          <p>Thank you for using our platform!</p>
+        </div>
+      `
+    });
+    
+    console.log(`Seat map update notification sent to ${organizerEmail}`);
+    return true;
+  } catch (error) {
+    console.error('Error sending seat map update notification:', error);
+    return false;
+  }
+}

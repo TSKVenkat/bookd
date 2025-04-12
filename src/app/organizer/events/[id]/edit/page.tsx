@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Event {
@@ -25,14 +25,9 @@ interface Venue {
   city: string;
 }
 
-// Helper function to extract ID safely
-function getEventId(params: { id: string }) {
-  return params.id;
-}
-
 export default function EditEvent({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const eventId = getEventId(params);
+  const eventId = params.id;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');

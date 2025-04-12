@@ -1,11 +1,14 @@
 // app/api/admin/organizers/[id]/approve/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { validateSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
 
+export const runtime = 'nodejs';
+
+// POST: Approve or reject an organizer
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -29,7 +32,9 @@ export async function POST(
       );
     }
     
-    const organizerId = params.id;
+    // Use destructuring instead of awaiting params
+    const { id: organizerId } = params;
+    
     if (!organizerId) {
       return NextResponse.json(
         { error: 'Organizer ID is required' },

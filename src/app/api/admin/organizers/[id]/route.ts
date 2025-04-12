@@ -1,11 +1,14 @@
 // app/api/admin/organizers/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { validateSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { v4 as uuidv4 } from 'uuid';
+
+export const runtime = 'nodejs';
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -29,7 +32,9 @@ export async function GET(
       );
     }
     
-    const organizerId = params.id;
+    // Use destructuring instead of awaiting params
+    const { id: organizerId } = params;
+    
     if (!organizerId) {
       return NextResponse.json(
         { error: 'Organizer ID is required' },
@@ -84,6 +89,7 @@ export async function GET(
     // Log this access for audit purposes
     await prisma.adminAuditLog.create({
       data: {
+        id: uuidv4(),
         adminId: user.id,
         action: 'VIEW_ORGANIZER',
         resourceType: 'ORGANIZER',

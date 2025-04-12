@@ -4,6 +4,8 @@ import { v2 as cloudinary } from 'cloudinary';
 import prisma from '@/lib/prisma';
 import { validateSession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { v4 as uuidv4 } from 'uuid';
+import { NextRequest } from 'next/server';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -14,7 +16,7 @@ cloudinary.config({
 });
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -38,7 +40,9 @@ export async function GET(
       );
     }
     
-    const documentId = params.id;
+    // Use destructuring instead of awaiting params
+    const { id: documentId } = params;
+    
     if (!documentId) {
       return NextResponse.json(
         { error: 'Document ID is required' },
@@ -71,6 +75,7 @@ export async function GET(
     // Log the access for audit purposes
     await prisma.adminAuditLog.create({
       data: {
+        id: uuidv4(),
         adminId: user.id,
         action: 'DOCUMENT_ACCESS',
         resourceType: 'ORGANIZER_DOCUMENT',

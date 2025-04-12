@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { validateSessionFromCookies } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import cloudinary from '@/lib/cloudinary';
+import { v2 as cloudinary } from 'cloudinary';
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {

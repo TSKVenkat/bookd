@@ -1,45 +1,56 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { validateSessionFromCookies } from '@/lib/auth';
 
+export const runtime = 'nodejs';
+
+// GET - Get a specific ticket type
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string; typeId: string } }
 ) {
   try {
     const user = await validateSessionFromCookies();
     
+    // Check if user is authenticated
     if (!user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
     
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: user.id,
-        status: 'APPROVED'
-      }
+    // Use destructuring instead of awaiting params
+    const { id: eventId, typeId } = params;
+    
+    // Check if organizer exists
+    const organizer = await prisma.organizer.findUnique({
+      where: { userId: user.id }
     });
     
     if (!organizer) {
-      return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Organizer not found' },
+        { status: 404 }
+      );
     }
     
-    // Ensure params is properly awaited
-    const { id: eventId, typeId } = params;
-    
-    // Check if event belongs to the organizer
-    const event = await prisma.event.findFirst({
+    // Check if event exists and belongs to the organizer
+    const event = await prisma.event.findUnique({
       where: { 
         id: eventId,
         organizerId: organizer.id
-      },
+      }
     });
     
     if (!event) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Event not found' },
+        { status: 404 }
+      );
     }
     
-    // Get the specific ticket type
+    // Get the ticket type
     const ticketType = await prisma.ticketType.findUnique({
       where: { 
         id: typeId,
@@ -48,43 +59,54 @@ export async function GET(
     });
     
     if (!ticketType) {
-      return NextResponse.json({ error: 'Ticket type not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Ticket type not found' },
+        { status: 404 }
+      );
     }
     
     return NextResponse.json(ticketType);
   } catch (error) {
     console.error('Error fetching ticket type:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Something went wrong' },
+      { status: 500 }
+    );
   }
 }
 
+// PUT - Update a ticket type
 export async function PUT(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string; typeId: string } }
 ) {
   try {
     const user = await validateSessionFromCookies();
     
     if (!user) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
     
-    const organizer = await prisma.organizer.findFirst({
-      where: {
-        userId: user.id,
-        status: 'APPROVED'
-      }
+    // Use destructuring instead of awaiting params
+    const { id: eventId, typeId } = params;
+    
+    // Check if organizer exists
+    const organizer = await prisma.organizer.findUnique({
+      where: { userId: user.id }
     });
     
     if (!organizer) {
-      return NextResponse.json({ error: 'Organizer not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Organizer not found' },
+        { status: 404 }
+      );
     }
     
-    // Ensure params is properly awaited
-    const { id: eventId, typeId } = params;
-    
-    // Check if event belongs to the organizer
-    const event = await prisma.event.findFirst({
+    // Check if event exists and belongs to the organizer
+    const event = await prisma.event.findUnique({
       where: { 
         id: eventId,
         organizerId: organizer.id
@@ -92,7 +114,19 @@ export async function PUT(
     });
     
     if (!event) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Event not found' },
+        { status: 404 }
+      );
+    }
+    
+    // Check if event date has passed
+    const currentDate = new Date();
+    if (event.startDate < currentDate) {
+      return NextResponse.json(
+        { error: 'Cannot modify ticket types for past events' },
+        { status: 400 }
+      );
     }
     
     // Check if ticket type exists
@@ -104,105 +138,170 @@ export async function PUT(
     });
     
     if (!existingTicketType) {
-      return NextResponse.json({ error: 'Ticket type not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Ticket type not found' },
+        { status: 404 }
+      );
     }
     
-    const body = await request.json();
-    const { name, description, price, color } = body;
+    const data = await request.json();
     
-    if (!name || typeof price !== 'number' || price <= 0) {
-      return NextResponse.json({ error: 'Missing or invalid required fields' }, { status: 400 });
+    if (!data.name || data.price === undefined) {
+      return NextResponse.json(
+        { error: 'Name and price are required' },
+        { status: 400 }
+      );
+    }
+    
+    // Ensure price is a valid number
+    const price = typeof data.price === 'string' 
+      ? parseFloat(data.price) 
+      : data.price;
+      
+    if (isNaN(price) || price <= 0) {
+      return NextResponse.json(
+        { error: 'Price must be a valid positive number' },
+        { status: 400 }
+      );
+    }
+    
+    // Prepare the update data object with explicitly allowed fields from the schema
+    const updateData = {
+      name: data.name,
+      price,
+      description: data.description ?? existingTicketType.description,
+      color: data.color || existingTicketType.color,
+    };
+
+    // Add optional fields conditionally
+    if (data.isPublic !== undefined) {
+      // @ts-ignore - isPublic is a valid field in the schema
+      updateData.isPublic = data.isPublic;
+    }
+    
+    if (data.capacity !== undefined) {
+      const capacityValue = parseInt(String(data.capacity), 10);
+      if (!isNaN(capacityValue)) {
+        // @ts-ignore - capacity is a valid field in the schema
+        updateData.capacity = capacityValue;
+      }
     }
     
     // Update ticket type
     const updatedTicketType = await prisma.ticketType.update({
       where: { id: typeId },
-      data: {
-        name,
-        description,
-        price,
-        color: color || '#3B82F6'
-      }
+      data: updateData
     });
     
     return NextResponse.json(updatedTicketType);
   } catch (error) {
     console.error('Error updating ticket type:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Something went wrong' },
+      { status: 500 }
+    );
   }
 }
 
+// DELETE - Delete a ticket type
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string; typeId: string } }
 ) {
   try {
     const user = await validateSessionFromCookies();
     
     if (!user) {
-      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
     }
     
-    // Ensure params is properly awaited
+    // Use destructuring instead of awaiting params
     const { id: eventId, typeId } = params;
     
-    // Verify the organizer
+    // Check if organizer exists
     const organizer = await prisma.organizer.findUnique({
       where: { userId: user.id }
     });
     
     if (!organizer) {
-      return NextResponse.json({ error: "Organizer not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Organizer not found' },
+        { status: 404 }
+      );
     }
     
-    // Check if the event belongs to the organizer
+    // Check if event exists and belongs to the organizer
     const event = await prisma.event.findUnique({
-      where: {
+      where: { 
         id: eventId,
         organizerId: organizer.id
       }
     });
     
     if (!event) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Event not found' },
+        { status: 404 }
+      );
     }
     
-    // Check if the ticket type exists
+    // Check if event date has passed
+    const currentDate = new Date();
+    if (event.startDate < currentDate) {
+      return NextResponse.json(
+        { error: 'Cannot modify ticket types for past events' },
+        { status: 400 }
+      );
+    }
+    
+    // Check if ticket type exists
     const ticketType = await prisma.ticketType.findUnique({
-      where: {
+      where: { 
         id: typeId,
         eventId
       }
     });
     
     if (!ticketType) {
-      return NextResponse.json({ error: "Ticket type not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Ticket type not found' },
+        { status: 404 }
+      );
     }
     
-    // Check if ticket type is in use by any seats
-    const seatCount = await prisma.seat.count({
+    // Check if there are any seats using this ticket type
+    const seatsCount = await prisma.seat.count({
       where: {
-        typeId
+        typeId,
+        SeatMap: {
+          eventId
+        }
       }
     });
     
-    if (seatCount > 0) {
+    if (seatsCount > 0) {
       return NextResponse.json(
-        { error: "Cannot delete ticket type that is in use by seats" },
+        { error: 'Cannot delete ticket type that is assigned to seats' },
         { status: 400 }
       );
     }
     
-    // Delete the ticket type
+    // Delete ticket type
     await prisma.ticketType.delete({
-      where: {
-        id: typeId
-      }
+      where: { id: typeId }
     });
     
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true, message: 'Ticket type deleted successfully' }
+    );
   } catch (error) {
-    console.error("Error deleting ticket type:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error('Error deleting ticket type:', error);
+    return NextResponse.json(
+      { error: 'Something went wrong' },
+      { status: 500 }
+    );
   }
 } 
